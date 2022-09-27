@@ -26,13 +26,16 @@ set _src=0
 set _drv=0
 set _drv_old=0
 set "_sourcefile="
+set "_device="
+set "_device2="
+set _dev=0
 
 REM //test for <game??
 for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, '^\t*<machine name=.+$', 'm')"') do if "%%g"=="true" set _tag=machine
 for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, '^\t*<driver status=.+$', 'm')"') do if "%%g"=="true" set _drv=1
 for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, '^\t*<driver status=\""protection\"".+$', 'm')"') do if "%%g"=="true" set _drv_old=1
 for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, '^\t*<%_tag% name=\""\w+\"" sourcefile=.+$', 'm')"') do if "%%g"=="true" set _src=1&set "_sourcefile=@sourcefile and "
-
+for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, '^\t*<%_tag% name=\""\w+\"".+?isdevice=\""yes\"".+$', 'm')"') do if "%%g"=="true" set _dev=1
 
 :main_menu
 cls
@@ -44,7 +47,7 @@ echo. 3. Cleanup and exit script
 echo.
 choice /n /c:123 /m "Enter Option:"
 echo.
-if %errorlevel% equ 1 goto :list_menu
+if %errorlevel% equ 1 goto :list_menu2
 if %errorlevel% equ 2 goto :batch_menu
 if %errorlevel% equ 3 (
 	del _temp\temp.dat & rd _temp
@@ -54,22 +57,36 @@ if %errorlevel% equ 3 (
 
 goto :main_menu
 REM ================================== endof main menu ====================================
+:list_menu2
+if %_dev% equ 0 goto :list_menu
+choice /m "filter devices?"
+if %errorlevel% equ 1 (
+	set "_device= and not(@isdevice='yes')"
+	set "_device2=[%_sourcefile%not(@isdevice='yes')]"
+)else (
+	set "_device="
+	set "_device2="
+)
+
+
 :list_menu
 cls
 echo. ================== List Options ================
-echo.  mechanical and devices are filter by default
+echo.             
 echo. =================================================
 echo.
-echo. 1. gamelist, all with titles
-echo. 2. gamelist, just parents
-echo. 3. gamelist, all with cloneof
-if %_src% equ 1 echo. 4. gamelist by sourcefile
-if %_src% equ 1 echo. 5. just list sourcefiles
-if %_drv% equ 1 echo. 6. gamelist, all with status
-echo. 7. gamelist, all games with CHD
-echo. 8. Go back
+echo. 1. all games with titles
+echo. 2. only parents with titles
+echo. 3. games by cloneof
+if %_src% equ 1 echo. 4. games by sourcefile
+if %_src% equ 1 echo. 5. single list of sourcefiles
+if %_drv% equ 1 echo. 6. games by overall driver status
+echo. 7. games with CHD
+echo. 8. games that need BIOS ^& all Bios
+echo. 9. games marked as mechanical and devices
+REM echo. 0. Go back
 echo.
-choice /n /c:12345678 /m "Enter Option:"
+choice /n /c:1234567890 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :list_all
 if %errorlevel% equ 2 goto :list_parents
@@ -78,13 +95,46 @@ if %_src% equ 1 if %errorlevel% equ 4 goto :list_src
 if %_src% equ 1 if %errorlevel% equ 5 goto :list_src2
 if %_drv% equ 1 if %errorlevel% equ 6 goto :list_status
 if %errorlevel% equ 7 goto :list_chd
-if %errorlevel% equ 8 goto :main_menu
+if %errorlevel% equ 8 goto :list_romof
+if %errorlevel% equ 9 goto :list_devices
+REM if %errorlevel% equ 0 goto :main_menu
 
+goto :list_menu
+
+:list_devices
+cls&echo. Building gamelist...
+
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@ismechanical='yes']/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isdevice='yes']/(@name|description)" >_temp\temp.2
+
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >"output\%_file%_mechanical.txt"
+_bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >"output\%_file%_device.txt"
+
+del _temp\temp.1 _temp\temp.2
+echo. All done! gamelist is in the OUTPUT folder&pause >nul
+goto :list_menu
+
+
+:list_romof
+cls&echo. Building gamelist...
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isbios='yes']/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >_temp\bios.lst
+
+echo. This may take a while...
+for /f "tokens=1 delims=	" %%g in (_temp\bios.lst) do (
+	_bin\xidel -s _temp\temp.dat -e "//%_tag%[@romof='%%g']/(@name|@romof|description)" >>_temp\temp.2
+) 
+_bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+?)$', '$1	$2	$3', 'm')" >"output\%_file%_romof_bios.txt"
+
+move /y _temp\bios.lst "output\%_file%_bios.txt"
+
+del _temp\temp.1 _temp\temp.2
+echo. All done! gamelist is in the OUTPUT folder&pause >nul
 goto :list_menu
 
 :list_chd
 cls&echo. Building gamelist...
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical) and disk]/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[disk]/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >"output\%_file%_chd.txt"
 
 del _temp\temp.1
@@ -93,19 +143,20 @@ goto :list_menu
 
 :list_status
 cls&echo. Building gamelist...
+REM //bios, samples, and devices dont have driver status info
+REM // will only include games with <driver status
 
 if %_drv_old% equ 1 (
 REM //no overall status
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@status='preliminary' or @status='protection' or @graphic='preliminary' or @color='preliminary' or @sound='preliminary']/../(@name|description)" >_temp\temp.1
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@color='imperfect' or @sound='imperfect' or @graphic='imperfect']/../(@name|description)" >_temp\temp.2
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@status='good' and @color='good' and @sound='good' and @graphic='good']/../(@name|description)" >_temp\temp.3
-
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='preliminary' or @status='protection' or @graphic='preliminary' or @color='preliminary' or @sound='preliminary']/../(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@color='imperfect' or @sound='imperfect' or @graphic='imperfect']/../(@name|description)" >_temp\temp.2
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='good' and @color='good' and @sound='good' and @graphic='good']/../(@name|description)" >_temp\temp.3
 
 )else (
 REM //overall status
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@status='preliminary']/../(@name|description)" >_temp\temp.1
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@status='imperfect']/../(@name|description)" >_temp\temp.2
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isbios) and not(@isdevice) and not(@ismechanical)]/driver[@status='good']/../(@name|description)" >_temp\temp.3
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='preliminary']/../(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='imperfect']/../(@name|description)" >_temp\temp.2
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='good']/../(@name|description)" >_temp\temp.3
 
 )
 
@@ -124,29 +175,34 @@ goto :list_menu
 
 :list_cloneof
 
-REM //clone of its self choice
+REM //clone of its self choice?? include parents?
+REM //fist column should be cloneof
+set _choice=0
+choice /m "include parents? "
+if %errorlevel% equ 1 set _choice=1
+
 cls&echo. Building gamelist...
 
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%@cloneof and not(@isbios) and not(@isdevice) and not(@ismechanical)]/(@name|@cloneof|description)" >_temp\temp.1
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof) and not(@isbios) and not(@isdevice) and not(@ismechanical)]/(@name|description)" >_temp\temp.2
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%@cloneof%_device%]/(@name|@cloneof|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+?)$', '$2	$1	$3', 'm')" >_temp\temp.3
 
+if %_choice% equ 1 (
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof)%_device%]/(@name|description)" >_temp\temp.2
+_bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1[p]	$1	$2', 'm')" >>_temp\temp.3
+)
 
-_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+?)$', '$1	$2	$3', 'm')" >_temp\temp.3
-_bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	none	$2', 'm')" >>_temp\temp.3
+sort _temp\temp.3 /o "output\%_file%_cloneof.txt"
 
-sort _temp\temp.3 /o _temp\temp.1
-
-move /y _temp\temp.1 "output\%_file%_gamelist_cloneof.txt"
 del _temp\temp.1 _temp\temp.2 _temp\temp.3
 
-echo. Finish, gamelist is in the output folder&pause
+cls&echo. All done! gamelist is in the OUTPUT folder&pause >nul
 goto :list_menu
 
 
 :list_parents
 cls&echo. Building gamelist...
-
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof) and not(@isbios) and not(@isdevice) and not(@ismechanical)]/(@name|description)" >_temp\temp.1
+REM //include bios option??
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof)%_device%]/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >"output\%_file%_parents.txt"
 del _temp\temp.1
 
@@ -157,7 +213,7 @@ goto :list_menu
 cls&echo. Building gamelist...
 
 REM //full gamelist with bios and description
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@isdevice) and not(@ismechanical)]/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%%_device2%/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	$2', 'm')" >"output\%_file%_full.txt"
 del _temp\temp.1
 
@@ -166,7 +222,7 @@ goto :list_menu
 
 :list_src2
 cls&echo Building gamelist...
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[not(@isdevice) and not(@ismechanical)]/@sourcefile" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@sourcefile%_device%]/@sourcefile" >_temp\temp.1
 call :nodups temp.1 1
 
 move /y _temp\temp.1 "output\%_file%_sourcefiles.txt"
@@ -176,7 +232,7 @@ goto :list_menu
 
 :list_src
 cls&echo Building gamelist...
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[not(@isdevice) and not(@ismechanical)]/(@sourcefile|@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@sourcefile%_device%]/(@sourcefile|@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n([\w./]+)\r\n(.+?)$', '$2	$1	$3', 'm')" >_temp\temp.2
 
 sort _temp\temp.2 /o "output\%_file%_gamelist_src.txt"
@@ -193,38 +249,79 @@ REM // =========================  end of list menu =============================
 REM //games with chd, samples, bios
 cls
 echo. ============ Batch script Options ================
-echo.  mechanical and devices are filter by default
+echo.    move all matched files to individual folders
 echo. =================================================
 echo.
-echo. 1. Move Clones, parents and bios to folders
-if %_drv% equ 1 echo. 2. Move Preliminary, Imperfect to folders
-if %_src% equ 1 echo. 3. Move games by sourcefile to folders
-echo. 4. Go back
+echo. 1. clones, parents, bios, mechanical and devices
+if %_drv% equ 1 echo. 2. preliminary, imperfect and good
+if %_src% equ 1 echo. 3. games by their sourcefile
+echo. 4. games that need chd images
+echo. 5. games by romof BIOS
+echo. 6. Go back
 echo.
-choice /n /c:1234 /m "Enter Option:"
+choice /n /c:123456 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :batch_type
 if %_drv% equ 1 if %errorlevel% equ 2 goto :batch_status
 if %_src% equ 1 if %errorlevel% equ 3 goto :batch_src
-if %errorlevel% equ 4 goto :main_menu
+if %errorlevel% equ 4 goto :batch_chd
+if %errorlevel% equ 5 goto :batch_romof
+if %errorlevel% equ 6 goto :main_menu
 
+goto :batch_menu
+
+:batch_romof
+REM //include bios and all games
+cls
+set "_option="
+echo. ====================================================================
+echo.         Type romof BIOS then press 'Enter' to add another one
+echo.             type 'finish' to build batch and go back
+echo. ====================================================================
+for %%g in (_temp\*.lst) do echo. %%~ng
+echo. ====================================================================
+echo.
+set /p _option="Enter bios: " ||goto :batch_romof
+echo.
+if "%_option%"=="finish" (
+	cls&echo Building batch file...
+	call :make_batch bios_romof
+	goto :batch_menu
+)
+
+for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, ' romof=\""%_option%\""')"') do (
+	if "%%g"=="false" (
+		echo That game was not found...&timeout 3 >nul
+		goto :batch_romof
+	)
+)
+
+REM //add bios to list?
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@romof='%_option%']/@name" >"_temp\%_option%.lst"
+(echo %_option%) >>"_temp\%_option%.lst"
+
+echo All games were added&timeout 3 >nul
+goto :batch_romof
+
+
+:batch_chd
+cls&echo. Building batch file...
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[disk]/@name" >_temp\chd_games.lst
+
+call :make_batch chd_games
 goto :batch_menu
 
 :batch_type
 cls&echo. Building batch file...
 
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@ismechanical='yes']/@name" >_temp\mechanical.lst
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isdevice='yes']/@name" >_temp\device.lst
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isbios='yes']/@name" >_temp\bios.lst
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isdevice='yes']/@name" >_temp\1_device.lst
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@ismechanical='yes']/@name" >_temp\2_mechanical.lst
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@isbios='yes']/@name" >_temp\3_bios.lst
 
 REM //include @sourcefile to seperate from standalone samples
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof) and not(@isbios) and not(@isdevice) and not(@ismechanical)]/@name" >_temp\parents.lst
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%@cloneof and not(@isbios) and not(@isdevice) and not(@ismechanical)]/@name" >_temp\clones.lst
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%@cloneof and not(@isbios) and not(@isdevice) and not(@ismechanical)]/@name" >_temp\4_clones.lst
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_sourcefile%not(@cloneof) and not(@isbios) and not(@isdevice) and not(@ismechanical)]/@name" >_temp\5_parents.lst
 
-REM //rouge samples
-if %_src% equ 1 (
-	_bin\xidel -s _temp\temp.dat -e "//%_tag%[not(@sourcefile)]/@name" >_temp\samples.lst
-)
 
 call :make_batch ParentsClonesBios
 goto :batch_menu
@@ -269,9 +366,6 @@ if "%_option%"=="finish" (
 	call :make_batch sourcefiles
 	goto :batch_menu
 )
-REM // automaticaly escape characters
-REM set "_option=%_option:'=''''%"
-REM for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '([*\\)(.])', '\\$1')"') do set "_option=%%g"
 
 for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, ' sourcefile=\""%_option%\""')"') do (
 	if "%%g"=="false" (
@@ -280,7 +374,6 @@ for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, ' sour
 	)
 )
 for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '[&*\\/. ]', '')"') do set "_folder=%%g"
-
 
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[@sourcefile='%_option%']/@name" >"_temp\%_folder%.lst"
 
@@ -327,7 +420,7 @@ echo. ===================================================================
 for %%g in (_temp\*.lst) do echo. %%~ng
 echo. ====================================================================
 echo.
-set /p _option="Enter Category: " ||goto :batch_src
+set /p _option="Enter Category: " ||goto :catver_batch
 echo.
 if "%_option%"=="finish" (
 	cls&echo Building batch file...
