@@ -1,5 +1,6 @@
 # mame-datafile-tools
 batch script xidel tools for MAME datafiles
+create .txt list, and batch scripts from a datafile or catver.ini
 
 # usage
 just drag and drop datafile .xml .dat tho the scrip.
