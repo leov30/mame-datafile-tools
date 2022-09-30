@@ -9,7 +9,7 @@ set "_file=%~n1"
 
 if not exist output md output
 if not exist _bin md _bin
-if not exist _temp (md _temp)else (del _temp\*.lst)
+if not exist _temp (md _temp)else (del _temp\*.lst 2>nul)
 
 if "%~x1"==".ini" goto :catver_menu
 
@@ -17,12 +17,14 @@ if not "%~x1"==".dat" (
 	if not "%~x1"==".xml" echo This file wasn't identified as a datafile&pause&exit
 )
 
-REM //mamediff 
+REM //mamediff, still check the 1st datafile 
 if not "%~2"=="" (
 	if not exist "_bin\mamediff.exe" echo. _bin\mamediff.exe was not found&pause&exit
 	if not exist "_bin\datutil.exe" echo. _bin\datutil.exe was not found&pause&exit 
 	goto :mamediff_menu
 )
+
+cls&echo. Getting datafile information... 
 
 REM //remove this because it breaks xidel
 _bin\xidel -s "%~1" -e "replace( $raw, '^<!DOCTYPE mame \[.+?\]>$', '', 'ms')" >_temp\temp.dat
@@ -40,6 +42,13 @@ if %_tag%==true (set "_tag=machine")else (set "_tag=game")
 if %_isbios%==true (set "_isbios=@isbios='yes'")else (set "_isbios=@runnable='no'")
 if %_src%==true set "_sourcefile=@sourcefile and "
 
+REM //cloneof table for the current datafile
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/(@name|@cloneof)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)$', '$1=$2', 'm')" >_temp\cloneof.1
+del _temp\temp.1
+
+REM //bios plain list
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_isbios%]/@name" >_temp\bios.1
 
 
 :main_menu
@@ -270,7 +279,7 @@ _bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='good']/../(@name|descr
 
 )
 
-REM //order matters
+REM //order matters, keep preliminary, mame2003 will have dupliplicates in predliminary and inperfect lists 
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	Preliminary	$2', 'm')" >_temp\status.lst
 _bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	Imperfect	$2', 'm')" >>_temp\status.lst
 if %_drv_old%==true call :nodups_tab status.lst
@@ -376,6 +385,7 @@ goto :batch_menu
 
 :batch_romof
 REM //include bios and all games
+REm //romof=BIOS only in parents, clones uses romof=parent
 cls
 set "_option="
 echo. ====================================================================
@@ -388,35 +398,44 @@ echo.
 set /p _option="Enter bios: " ||goto :batch_romof
 echo.
 if "%_option%"=="finish" (
-	cls&echo Building batch file...
 	call :make_batch bios_romof
 	goto :batch_menu
 )
 
-for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, ' romof=\""%_option%\""')"') do (
-	if "%%g"=="false" (
-		echo That game was not found...&timeout 3 >nul
-		goto :batch_romof
-	)
+REM // check if its a bios
+findstr /xc:"%_option%" _temp\bios.1 >nul
+if %errorlevel% equ 1 (
+	echo. That BIOS was not found in the datafile&timeout 3 >nul
+	goto :batch_romof
 )
 
-REM //add bios to list?
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@romof='%_option%']/@name" >"_temp\%_option%.lst"
-(echo %_option%) >>"_temp\%_option%.lst"
+echo. Addding matching games to the list...
+REM //this will add only parents
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@romof='%_option%']/@name" >_temp\%_option%.lst
 
-echo All games were added&timeout 3 >nul
+REM //add all clones
+for /f "delims=" %%g in (_temp\%_option%.lst) do ( 
+	for /f "delims==" %%h in ('findstr /rc:"^.*=%%g$" _temp\cloneof.1') do (echo %%h) >>_temp\%_option%.lst
+	
+)
+
+REM //add bios
+(echo %_option%) >>_temp\%_option%.lst
+
+
+echo. All games were added!!&timeout 3 >nul
 goto :batch_romof
 
 
 :batch_chd
-cls&echo. Building batch file...
+cls&echo. Making list of games...
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[disk]/@name" >_temp\chd_games.lst
 
 call :make_batch chd_games
 goto :batch_menu
 
 :batch_type
-cls&echo. Building batch file...
+cls&echo. Making list of games...
 
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[@isdevice='yes']/@name" >_temp\1_device.lst
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[@ismechanical='yes']/@name" >_temp\2_mechanical.lst
@@ -432,7 +451,7 @@ goto :batch_menu
 
 :batch_status
 REM //includes bios and all games
-cls&echo. Building batch file...
+cls&echo. Making list of games...
 
 REM //no overall status
 if %_drv_old%==true (
@@ -447,6 +466,11 @@ _bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='imperfect']/../@name" 
 _bin\xidel -s _temp\temp.dat -e "//%_tag%/driver[@status='good']/../@name" >_temp\3_good.lst
 
 )
+REM //no need to look for clones in good.lst, since this would be the leftovers
+REM call :add_clones_lst
+
+call :add_clones 1_preliminary.lst
+call :add_clones 2_imperfect.lst
 
 call :make_batch GoodImperfectPreliminary
 goto :batch_menu
@@ -466,7 +490,7 @@ echo.
 set /p _option="Enter Sourcefile: " ||goto :batch_src
 echo.
 if "%_option%"=="finish" (
-	cls&echo Building batch file...
+	call :add_clones_lst
 	call :make_batch sourcefiles
 	goto :batch_menu
 )
@@ -479,6 +503,7 @@ for /f "delims=" %%g in ('_bin\xidel -s _temp\temp.dat -e "matches( $raw, ' sour
 )
 for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '[&*\\/. ]', '')"') do set "_folder=%%g"
 
+REM //get parents then add the clones??
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[@sourcefile='%_option%']/@name" >"_temp\%_folder%.lst"
 
 echo All games were added&timeout 3 >nul
@@ -515,21 +540,36 @@ echo Finish, the list is in the output folder&pause
 goto :catver_menu
 
 :catver_batch
+
+set /a _count=0
+:catver_batch2
 cls&set "_option="
 echo. ==================================================================
 echo. Type full category or part, then press 'Enter' to add another one
 echo.           each entry will make its own folder
-echo.          type 'finish' to build batch and go back
+echo. ====================================================================
+echo. 1. finish list and build batch
+echo. 2. clear list and restart
+echo. 3. go back
 echo. ===================================================================
 for %%g in (_temp\*.lst) do echo. %%~ng
 echo. ====================================================================
 echo.
-set /p _option="Enter Category: " ||goto :catver_batch
+set /p _option="Enter Category, or Option: " ||goto :catver_batch2
 echo.
-if "%_option%"=="finish" (
-	cls&echo Building batch file...
+if "%_option%"=="1" (
+	call :add_clones_lst
 	call :make_batch catver_folders
 	goto :catver_menu
+)
+if "%_option%"=="2" (
+	del /q _temp\*.lst
+	goto :catver_batch
+)
+if "%_option%"=="3" (
+	del /q _temp\*.lst
+	goto :catver_menu
+
 )
 
 REM // automaticaly escape characters
@@ -539,56 +579,77 @@ for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '([*\\)(.])', 
 for /f "delims=" %%g in ('_bin\xidel -s _temp\catver.tmp -e "matches( $raw, '^\w+=.*?%_option%.*$', 'mi')"') do (
 	if "%%g"=="false" (
 		echo That category was not found...&timeout 3 >nul
-		goto :catver_batch
+		goto :catver_batch2
 	)
 )
 
+set /a _count+=1
 for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '[&*\\/. ]', '')"') do set "_folder=%%g"
-_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^(\w+)=.*?%_option%.*$', 1, 'mi*')" >"_temp\%_folder%.lst"
+_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^(\w+)=.*?%_option%.*$', 1, 'mi*')" >"_temp\%_count%_%_folder%.lst"
 
 echo All games were added&timeout 3 >nul
-goto :catver_batch
+goto :catver_batch2
 
 REM // ================================= end of catver.ini options =========================================
 
 :mamediff_menu
-REM //switch 
+
+set "_dat1=%~1"
+set "_dat2=%~2"
+set "_file1=%~n1"
+set "_file2=%~n2"
+set "_dummy="
+
+:diff_menu2
 cls
 echo.
-echo. ============= MAMEdiff Options ===========
+echo. =============== MAMEdiff Options ================
 echo.
-echo. "%~n1" vs "%~n2"
+echo. "%_file1%" ------^> "%_file2%"
 echo.
-echo. =========================================
+echo. ================================================
 echo. 1. cross reference both datafiles
-echo. 2. cleanup and exit
+echo. 2. switch around datafiles
+echo. 3. cleanup and exit
 echo.
-choice /n /c:12 /m "Enter Option:"
+choice /n /c:123 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :diff_cross
+if %errorlevel% equ 2 goto :diff_switch
 if %errorlevel% equ 2 exit
 
-goto :mamediff_menu
+goto :diff_menu2
+
+:diff_switch
+
+set "_dummy=%_dat2%"
+set "_dat2=%_dat1%"
+set "_dat1=%_dummy%"
+
+set "_dummy=%_file2%"
+set "_file2=%_file1%"
+set "_file1=%_dummy%"
+
+goto :diff_menu2
 
 :diff_cross
 
 REM //compare only the parenst from the first datafiles vs all the games of the second datafile
 choice /m "Use only parents?:"
 if %errorlevel% equ 1 (
-	_bin\datutil -r -o _temp\temp1.dat -f generic "%~1" >nul
-	REM _bin\datutil -r -o _temp\temp2.dat -f generic "%~2" >nul
+	_bin\datutil -r -o _temp\temp1.dat -f generic "%_dat1%" >nul
 	
 )else (
-	_bin\datutil -o _temp\temp1.dat -f generic "%~1" >nul
-	REM _bin\datutil -o _temp\temp2.dat -f generic "%~2" >nul
+	_bin\datutil -o _temp\temp1.dat -f generic "%_dat1%" >nul
 
 )
 
-_bin\datutil -o _temp\temp2.dat -f generic "%~2" >nul
+_bin\datutil -o _temp\temp2.dat -f generic "%_dat2%" >nul
 
 _bin\mamediff -s _temp\temp1.dat _temp\temp2.dat >nul
 del mamediff.log&move mamediff.out _temp\
 
+REM //maybe remove devices from here?
 _bin\xidel -s _temp\temp1.dat -e "//game/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1|$2', 'm')" >_temp\titles1.lst
 
@@ -596,9 +657,7 @@ _bin\xidel -s _temp\temp2.dat -e "//game/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1|$2', 'm')" >_temp\titles2.lst
 
 _bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^\w+\t\w+$', 0, 'm*')" >_temp\index.1
-
 _bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^(\w+)\t$', 1, 'm*')" >_temp\index.2
-
 
 REM //both
 type nul >_temp\temp.1
@@ -608,8 +667,8 @@ for /f "tokens=1,2 delims=	" %%g in (_temp\index.1) do (
 	_bin\xidel -s _temp\titles2.lst -e "extract( $raw, '^%%h\|.+$', 0, 'm')" >>_temp\temp.1
 
 )
-(echo "%~n1" -----^> "%~n2") >output\cross.txt
-_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(.+?)\r\n(.+)$', '$1 -----> $2', 'm')" >>output\cross.txt
+(echo "%_file1%" -----^> "%_file2%") >_temp\cross.txt
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(.+?)\r\n(.+)$', '$1 -----> $2', 'm')" >>_temp\cross.txt
 
 REM //only in the first
 type nul >_temp\temp.1
@@ -618,17 +677,57 @@ for /f "delims=" %%g in (_temp\index.2) do (
 	_bin\xidel -s _temp\titles1.lst -e "extract( $raw, '^%%g\|.+$', 0, 'm')" >>_temp\temp.1
 
 )
-(echo "%~n1") >output\cross2.txt
-type _temp\temp.1 >>output\cross2.txt
+(echo "%_file1%") >_temp\cross2.txt
+type _temp\temp.1 >>_temp\cross2.txt
 
 del /q _temp\*.lst _temp\temp.1 _temp\index.1 _temp\index.2
 
-REM //if devices detected in 1st datafile
-
-
-goto :mamediff_menu
+move /y _temp\cross.txt output
+move /y _temp\cross2.txt output
+goto :diff_menu2
 
 REM // ============================== end of mamediff options =================================================
+
+
+:add_clones
+setlocal enabledelayedexpansion
+cls&echo. Looking for orphan clones, this may take a while...
+
+copy /y _temp\%1 _temp\temp.1 >nul
+
+for /f "delims=" %%h in (_temp\%1) do (
+	for /f "delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
+		findstr /xc:"%%i" _temp\%1 >nul
+		if !errorlevel! equ 1 (echo %%i) >>_temp\temp.1
+	)
+)
+	
+move /y _temp\temp.1 _temp\%1 >nul
+
+setlocal disabledelayedexpansion
+exit /b
+
+:add_clones_lst
+setlocal enabledelayedexpansion
+REM //clones cant run without parents, so add all the clones when moving parents... 
+REM //no need to check if parent?? because of 'for' behaviour
+cls&echo. Looking for orphan clones, this may take a while...
+for %%g in (_temp\*.lst) do (
+	copy /y %%g _temp\temp.1 >nul
+
+	for /f "delims=" %%h in (%%g) do (
+		for /f "delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
+			findstr /xc:"%%i" %%g >nul
+			if !errorlevel! equ 1 (echo %%i) >>_temp\temp.1
+		)
+	)
+		
+	move /y _temp\temp.1 %%g >nul
+)
+
+setlocal disabledelayedexpansion
+exit /b
+
 
 :nodups_tab
 REM // filter by fist string, TAB as delimiter
@@ -670,7 +769,9 @@ exit /b
 
 :make_batch
 REM //may have duplicate entries, dosen't matter becuase of list position
- 
+REM // add copy, move option
+
+cls&echo. Building batch script...
 if not exist "_temp\*.lst" exit /b
 (
 	echo @echo off
@@ -695,7 +796,7 @@ if not exist "_temp\*.lst" exit /b
 del /q _temp\*.lst
 move /y "_temp\%_file%_%1.bat" output\
 
-echo. Finish, batch script is in the outputfolder&pause
+cls&echo. All done!! batch script is in the OUTPUT folder&timeout 5 >nul
 exit /b
 
 
