@@ -1,54 +1,35 @@
 @echo off
-
 cd /d "%~dp0"
+set "_file=%~n1"
+
 if "%~1"=="" echo Only drag and drop datafiles&pause&exit
 if not exist "%~1" echo Change the name of the file and try agian&pause&exit
-if not exist "_bin\xidel.exe" echo This script needs _bin\xidel.exe to work&pause&exit
-
-set "_file=%~n1"
 
 if not exist output md output
 if not exist _bin md _bin
 if not exist _temp (md _temp)else (del _temp\*.lst 2>nul)
 
+if not exist "_bin\xidel.exe" echo This script needs _bin\xidel.exe to work&pause&exit
+
+REM // if 1st file its a .ini file
 if "%~x1"==".ini" goto :catver_menu
 
 if not "%~x1"==".dat" (
-	if not "%~x1"==".xml" echo This file wasn't identified as a datafile&pause&exit
+	if not "%~x1"==".xml" echo. 1st file wasn't identified as a datafile&pause&exit
 )
 
-REM //mamediff, still check the 1st datafile 
+REM //if detects a 2nd data file
 if not "%~2"=="" (
 	if not exist "_bin\mamediff.exe" echo. _bin\mamediff.exe was not found&pause&exit
-	if not exist "_bin\datutil.exe" echo. _bin\datutil.exe was not found&pause&exit 
+	if not exist "_bin\datutil.exe" echo. _bin\datutil.exe was not found&pause&exit
+	
+	if not "%~x2"==".dat" (
+		if not "%~x2"==".xml" echo. 2nd file wasn't identified as a datafile&pause&exit
+	)
 	goto :mamediff_menu
 )
 
-cls&echo. Getting datafile information... 
-
-REM //remove this because it breaks xidel
-_bin\xidel -s "%~1" -e "replace( $raw, '^<!DOCTYPE mame \[.+?\]>$', '', 'ms')" >_temp\temp.dat
-
-for /f "delims=" %%g in ('_bin\xidel -s --output-format=cmd _temp\temp.dat 
-		-e "_tag:=matches( $raw, '<machine name=\""\w+\""')"
-		-e "_drv:=matches( $raw, '<driver status=\""\w+\""')"
-		-e "_drv_old:=matches( $raw, '<driver status=\""protection\""')"
-		-e "_src:=matches( $raw, 'sourcefile=\""[\w./-]+\""')"
-		-e "_dev:=matches( $raw, 'isdevice=\""yes\""')"
-		-e "_isbios:=matches( $raw, 'isbios=\""yes\""')"') do %%g
-
-set "_sourcefile="
-if %_tag%==true (set "_tag=machine")else (set "_tag=game")
-if %_isbios%==true (set "_isbios=@isbios='yes'")else (set "_isbios=@runnable='no'")
-if %_src%==true set "_sourcefile=@sourcefile and "
-
-REM //cloneof table for the current datafile
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/(@name|@cloneof)" >_temp\temp.1
-_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)$', '$1=$2', 'm')" >_temp\cloneof.1
-del _temp\temp.1
-
-REM //bios plain list
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_isbios%]/@name" >_temp\bios.1
+call :get_dat_info "%~1"
 
 
 :main_menu
@@ -559,8 +540,19 @@ REM //remove this because breaks xidel
 _bin\xidel -s --input-format=html "%~1" -e "replace( $raw, '^\[VerAdded\].+', '', 'mis')" >_temp\temp.1
 _bin\xidel -s --input-format=html _temp\temp.1 -e "replace( $raw, '^\[\w+\]$', '', 'm')" >_temp\catver.tmp
 
+set "_dat="
+for %%g in (*.dat *.xml) do set "_dat=%%g"
+
+if not "%_dat%"=="" (
+	call :get_dat_info "%_dat%"
+	
+)
+
+:catver_menu2
 cls
-echo.========= Catver.ini Options ==========
+echo. ========= Catver.ini Options ===========
+echo. %_dat%
+echo. ========================================
 echo.
 echo. 1. Generate list from catver.ini
 echo. 2. Make Batch script from catver.ini folders
@@ -570,7 +562,7 @@ choice /n /c:123 /m "Enter Option:"
 if %errorlevel% equ 1 goto :catver_list
 if %errorlevel% equ 2 goto :catver_batch
 if %errorlevel% equ 3 exit
-goto :catver_menu
+goto :catver_menu2
 
 :catver_list
 cls&echo Building list...
@@ -580,7 +572,7 @@ call :nodups catver.txt 1
 move /y _temp\catver.txt output
 
 echo Finish, the list is in the output folder&pause
-goto :catver_menu
+goto :catver_menu2
 
 :catver_batch
 
@@ -601,9 +593,9 @@ echo.
 set /p _option="Enter Category, or Option: " ||goto :catver_batch2
 echo.
 if "%_option%"=="1" (
-	REM call :add_clones_lst
+	if not "%_dat%"=="" call :add_clones_lst
 	call :make_batch catver_folders
-	goto :catver_menu
+	goto :catver_menu2
 )
 if "%_option%"=="2" (
 	del /q _temp\*.lst
@@ -611,7 +603,7 @@ if "%_option%"=="2" (
 )
 if "%_option%"=="3" (
 	del /q _temp\*.lst
-	goto :catver_menu
+	goto :catver_menu2
 
 )
 
@@ -887,6 +879,36 @@ del /q _temp\*.lst
 move /y "_temp\%_file%_%1.bat" output\
 
 cls&echo. All done!! batch script is in the OUTPUT folder&timeout 5 >nul
+exit /b
+
+:get_dat_info
+
+cls&echo. Getting datafile information... 
+
+REM //remove this because it breaks xidel
+_bin\xidel -s %1 -e "replace( $raw, '^<!DOCTYPE mame \[.+?\]>$', '', 'ms')" >_temp\temp.dat
+
+for /f "delims=" %%g in ('_bin\xidel -s --output-format=cmd _temp\temp.dat 
+		-e "_tag:=matches( $raw, '<machine name=\""\w+\""')"
+		-e "_drv:=matches( $raw, '<driver status=\""\w+\""')"
+		-e "_drv_old:=matches( $raw, '<driver status=\""protection\""')"
+		-e "_src:=matches( $raw, 'sourcefile=\""[\w./-]+\""')"
+		-e "_dev:=matches( $raw, 'isdevice=\""yes\""')"
+		-e "_isbios:=matches( $raw, 'isbios=\""yes\""')"') do %%g
+
+set "_sourcefile="
+if %_tag%==true (set "_tag=machine")else (set "_tag=game")
+if %_isbios%==true (set "_isbios=@isbios='yes'")else (set "_isbios=@runnable='no'")
+if %_src%==true set "_sourcefile=@sourcefile and "
+
+REM //cloneof table for the current datafile
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/(@name|@cloneof)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)$', '$1=$2', 'm')" >_temp\cloneof.1
+del _temp\temp.1
+
+REM //bios plain list
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[%_isbios%]/@name" >_temp\bios.1
+
 exit /b
 
 
