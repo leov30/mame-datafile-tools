@@ -72,6 +72,8 @@ goto :main_menu
 
 REM ================================== endof main menu ====================================
 
+
+
 :build_html
 
 (echo ^<^!DOCTYPE html^>
@@ -132,7 +134,8 @@ echo. 7. games with CHD
 echo. 8. games that need BIOS ^& all Bios
 echo. 9. by manufacturer ^& year
 echo. 10. preliminary parents with good clones
-echo. 11. go back
+echo. 11. list games with samples
+echo. 12. go back
 echo.
 set /p _option="Type option number, and Enter: " || goto :list_menu
 echo.
@@ -147,10 +150,32 @@ if %_option% equ 7 goto :list_chd
 if %_option% equ 8 goto :list_romof
 if %_option% equ 9 goto :list_manuf
 if %_option% equ 10 goto :list_xclones
-if %_option% equ 11 goto :main_menu
+if %_option% equ 11 goto :list_samples
+if %_option% equ 12 goto :main_menu
 
 echo INVALID OPTION!!&timeout 3 >nul
 goto :list_menu
+
+REM //games with bad/missing dumps
+
+:list_samples
+
+REM //games with zip samples?
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[sample and not(@sampleof)]/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1[s]	$1|$2', 'm')" >_temp\samples.lst
+
+REM //all games that need samples
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@sampleof]/(@name|@sampleof|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+)$', '$2	$1|$3', 'm')" >>_temp\samples.lst
+
+
+sort _temp\samples.lst /o _temp\samplesof.txt
+
+
+
+goto :list_menu
+
+
 
 :list_xclones
 set "_option=" & set "_option2="
@@ -370,18 +395,36 @@ if %_drv%==true echo. 2. preliminary, imperfect and good
 if %_src%==true echo. 3. games by their sourcefile
 echo. 4. games that need chd images
 echo. 5. games by romof BIOS
-echo. 6. Go back
+echo. 6. rename zip names .png to game description
+echo. 7. Go back
 echo.
-choice /n /c:123456 /m "Enter Option:"
+choice /n /c:1234567 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :batch_type
 if %_drv%==true if %errorlevel% equ 2 goto :batch_status
 if %_src%==true if %errorlevel% equ 3 goto :batch_src
 if %errorlevel% equ 4 goto :batch_chd
 if %errorlevel% equ 5 goto :batch_romof
-if %errorlevel% equ 6 goto :main_menu
+if %errorlevel% equ 6 goto :batch_img
+if %errorlevel% equ 7 goto :main_menu
 
 goto :batch_menu
+
+
+:batch_img
+set "_option=$1	$2"
+choice /m "invert script? "
+if %errorlevel% equ 1 set "_option=$2	$1"
+
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '[<>:\"\"/\\|?*&]', '_')" >_temp\temp.2
+_bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+)$', '%_option%', 'm')" >_temp\png_renamer.lst
+
+REM _bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', 'copy /Y $1.png \""RENAMED_PNG\\\$2.png\"" >nul 2>&1 || (echo $1.png) >>NOTFOUND_PNG.txt', 'm')" >>"output\%_file%_png_renmaer.bat"
+
+call :make_batch_img png_renamer.lst
+goto :batch_menu
+
 
 :batch_romof
 REM //include bios and all games
@@ -558,7 +601,7 @@ echo.
 set /p _option="Enter Category, or Option: " ||goto :catver_batch2
 echo.
 if "%_option%"=="1" (
-	call :add_clones_lst
+	REM call :add_clones_lst
 	call :make_batch catver_folders
 	goto :catver_menu
 )
@@ -610,15 +653,35 @@ echo.
 echo. ================================================
 echo. 1. cross reference both datafiles
 echo. 2. switch around datafiles
+echo. 3. batch script to rename .png images
 echo. 3. cleanup and exit
 echo.
-choice /n /c:123 /m "Enter Option:"
+choice /n /c:1234 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :diff_cross
 if %errorlevel% equ 2 goto :diff_switch
-if %errorlevel% equ 2 exit
+if %errorlevel% equ 3 goto :diff_img
+if %errorlevel% equ 4 exit
 
 goto :diff_menu2
+
+:diff_img
+REM //mamediff.out has repeated entries
+set "_option="
+choice /m "Use only parents?:"
+if %errorlevel% equ 1 set "_option=-r "
+_bin\datutil -o _temp\temp1.dat -f generic "%_dat1%" >nul
+_bin\datutil %_option%-o _temp\temp2.dat -f generic "%_dat2%" >nul	
+
+_bin\mamediff -s _temp\temp1.dat _temp\temp2.dat >nul
+del mamediff.log&move mamediff.out _temp\
+
+_bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^\w+\t\w+$', 0, 'm*')" >_temp\images.lst
+
+call :make_batch_img images.lst
+
+goto :diff_menu2
+
 
 :diff_switch
 
@@ -635,15 +698,11 @@ goto :diff_menu2
 :diff_cross
 
 REM //compare only the parenst from the first datafiles vs all the games of the second datafile
+set "_option="
 choice /m "Use only parents?:"
-if %errorlevel% equ 1 (
-	_bin\datutil -r -o _temp\temp1.dat -f generic "%_dat1%" >nul
-	
-)else (
-	_bin\datutil -o _temp\temp1.dat -f generic "%_dat1%" >nul
+if %errorlevel% equ 1 set "_option=-r "
 
-)
-
+_bin\datutil %_option%-o _temp\temp1.dat -f generic "%_dat1%" >nul
 _bin\datutil -o _temp\temp2.dat -f generic "%_dat2%" >nul
 
 _bin\mamediff -s _temp\temp1.dat _temp\temp2.dat >nul
@@ -766,6 +825,37 @@ del _temp\nodups.1
 
 setlocal disabledelayedexpansion
 exit /b
+
+
+:make_batch_img
+REM //may have duplicate entries, dosen't matter becuase of list position
+REM // add copy, move option
+
+cls&echo. Building batch script...
+if not exist "_temp\*.lst" exit /b
+(
+	echo @echo off
+	echo title "%_file%" ^^^| Build: %date%
+	echo echo.=====================================================
+	echo echo. This script will COPY matched .png and rename them   
+	echo echo.=====================================================
+	echo choice /m "Continue?"
+	echo if %%errorlevel%% equ 2 exit
+	echo cls^&echo. Creating folders and Copying files...
+	
+	echo md RENAMED_PNG
+	for /f "tokens=1,2 delims=	" %%h in (_temp\%1) do (	
+			echo copy /y "%%h.png" "RENAMED_PNG\%%i.png" ^>nul
+	)
+	
+)>"_temp\%_file%_%~n1.bat"
+
+del /q _temp\*.lst
+move /y "_temp\%_file%_%~n1.bat" output\
+
+cls&echo. All done!! batch script is in the OUTPUT folder&timeout 5 >nul
+exit /b
+
 
 :make_batch
 REM //may have duplicate entries, dosen't matter becuase of list position
