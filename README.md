@@ -10,7 +10,7 @@ optional: mamediff, and datautil
 # usage
 just drag and drop datafile .xml .dat tho the scrip.
 
-also drag and drop catver.ini
+also drag and drop catver.ini + datafile to make batch script or list. support languages.in, bestgames.ini, nplayers.ini, adver.ini
 
 drag and drop 2 datafiles at the same time, will load mamediff options to make cross refernece an unique game list
 
