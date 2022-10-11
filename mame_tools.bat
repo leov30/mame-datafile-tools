@@ -13,6 +13,7 @@ if not exist "_bin\xidel.exe" echo This script needs _bin\xidel.exe to work&paus
 
 REM // if 1st file its a .ini file
 if "%~x1"==".ini" goto :catver_menu
+if "%~x2"==".ini" goto :catver_menu
 
 if not "%~x1"==".dat" (
 	if not "%~x1"==".xml" echo. 1st file wasn't identified as a datafile&pause&exit
@@ -102,7 +103,7 @@ if %errorlevel% equ 1 (
 set "_option="
 cls
 echo. ================== List Options ================
-echo.             
+echo. %_file%        
 echo. =================================================
 echo.
 echo. 1. all games with titles
@@ -116,7 +117,9 @@ echo. 8. games that need BIOS ^& all Bios
 echo. 9. by manufacturer ^& year
 echo. 10. preliminary parents with good clones
 echo. 11. list games with samples
-echo. 12. go back
+echo. 12. list games with baddum ^& nodump
+if %_input_old%==true echo. 13. list by contols
+echo. 14. go back
 echo.
 set /p _option="Type option number, and Enter: " || goto :list_menu
 echo.
@@ -132,31 +135,55 @@ if %_option% equ 8 goto :list_romof
 if %_option% equ 9 goto :list_manuf
 if %_option% equ 10 goto :list_xclones
 if %_option% equ 11 goto :list_samples
-if %_option% equ 12 goto :main_menu
+if %_option% equ 12 goto :list_nodump
+if %_input_old%==true if %_option% equ 13 goto :list_controls
+if %_option% equ 14 goto :main_menu
 
 echo INVALID OPTION!!&timeout 3 >nul
 goto :list_menu
 
-REM //games with bad/missing dumps
+:list_controls
+cls&echo. Building game list...
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/input/@control" >_temp\index.1
+call :nodups index.1 1
+type nul >_temp\temp.2
+for /f %%g in (_temp\index.1) do (
+	_bin\xidel -s _temp\temp.dat -e "//%_tag%/input[@control='%%g']/../(@name|description)" >_temp\temp.1
+	_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '%%g	$1|$2', 'm')" >>_temp\temp.2
 
-:list_samples
+)
+sort _temp\temp.2 /o "output\%_file%_controls.txt"
+sort _temp\index.1 /o "output\%_file%_input_control.txt"
 
-REM //games with zip samples?
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[sample and not(@sampleof)]/(@name|description)" >_temp\temp.1
-_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1[s]	$1|$2', 'm')" >_temp\samples.lst
-
-REM //all games that need samples
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@sampleof]/(@name|@sampleof|description)" >_temp\temp.1
-_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+)$', '$2	$1|$3', 'm')" >>_temp\samples.lst
-
-
-sort _temp\samples.lst /o _temp\samplesof.txt
-
-
-
+del _temp\temp.2 _temp\index.1
+cls&echo. All done! gamelist is in the OUTPUT folder&timeout 5 >nul
 goto :list_menu
 
+:list_nodump
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/rom[not(@status='baddump') and @status='nodump']/../(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', 'nodump	$1|$2', 'm')" >_temp\temp.2
 
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/rom[@status='baddump' and not(@status='nodump')]/../(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', 'baddump	$1|$2', 'm')" >>_temp\temp.2
+
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/rom[@status='baddump' and @status='nodump']/../(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', 'baddump/nodump	$1|$2', 'm')" >>_temp\temp.2
+
+sort _temp\temp.2 /o "output\%_file%_nodump_baddump.txt"
+
+del _temp\temp.1 _temp\temp.2
+goto :list_menu
+
+:list_samples
+REM //games with zip samples?
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[sample and not(@sampleof)]/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1[s]	$1|$2', 'm')" >_temp\temp.2
+REM //all games that need samples
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@sampleof]/(@name|@sampleof|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+)$', '$2	$1|$3', 'm')" >>_temp\temp.2
+
+sort _temp\temp.2 /o "output\%_file%_samplesof.txt"
+goto :list_menu
 
 :list_xclones
 set "_option=" & set "_option2="
@@ -289,10 +316,11 @@ REM //order matters, keep preliminary, mame2003 will have dupliplicates in predl
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	Preliminary	$2', 'm')" >_temp\status.lst
 _bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	Imperfect	$2', 'm')" >>_temp\status.lst
 if %_drv_old%==true call :nodups_tab status.lst
-
 _bin\xidel -s _temp\temp.3 -e "replace( $raw, '^(\w+)\r\n(.+?)$', '$1	Good	$2', 'm')" >>_temp\status.lst
 
-sort _temp\status.lst /o "output\%_file%_status.txt"
+_bin\xidel -s _temp\status.lst -e "replace( $raw, '^(\w+)\t(\w+)\t', '$2	$1|', 'm')" >_temp\temp.1
+
+sort _temp\temp.1 /o "output\%_file%_status.txt"
 
 del _temp\temp.1 _temp\temp.2 _temp\temp.3 _temp\status.lst
 echo. Finish, gamelist is in the output folder&pause
@@ -377,9 +405,10 @@ if %_src%==true echo. 3. games by their sourcefile
 echo. 4. games that need chd images
 echo. 5. games by romof BIOS
 echo. 6. rename zip names .png to game description
-echo. 7. Go back
+echo. 7. copy .png that matched games in the datafile
+echo. 8. Go back
 echo.
-choice /n /c:1234567 /m "Enter Option:"
+choice /n /c:12345678 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :batch_type
 if %_drv%==true if %errorlevel% equ 2 goto :batch_status
@@ -387,10 +416,22 @@ if %_src%==true if %errorlevel% equ 3 goto :batch_src
 if %errorlevel% equ 4 goto :batch_chd
 if %errorlevel% equ 5 goto :batch_romof
 if %errorlevel% equ 6 goto :batch_img
-if %errorlevel% equ 7 goto :main_menu
+if %errorlevel% equ 7 goto :batch_img2
+if %errorlevel% equ 8 goto :main_menu
 
 goto :batch_menu
 
+
+:batch_img2
+set "_option="
+choice /m "Use only parents?"
+if %errorlevel% equ 1 set "_option=[not(@cloneof)]"
+cls&echo. Building game list...
+_bin\xidel -s _temp\temp.dat -e "//%_tag%%_option%/@name" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)$', '$1	$1', 'm')" >_temp\copy_png.lst
+call :make_batch_img copy_png.lst
+del _temp\temp.1
+goto :batch_menu
 
 :batch_img
 set "_option=$1	$2"
@@ -536,50 +577,129 @@ goto :batch_src
 REM // ==================================== end of batch menu ===============================================
 
 :catver_menu
-REM //remove this because breaks xidel
-_bin\xidel -s --input-format=html "%~1" -e "replace( $raw, '^\[VerAdded\].+', '', 'mis')" >_temp\temp.1
-_bin\xidel -s --input-format=html _temp\temp.1 -e "replace( $raw, '^\[\w+\]$', '', 'm')" >_temp\catver.tmp
+cls&echo. Getting .ini info...
+REM if not exist "_bin\datutil.exe" cls&echo. This script needs "_bin\datuil.exe"&pause&exit
+set "_dat="&set "_catver="
 
-set "_dat="
-for %%g in (*.dat *.xml) do set "_dat=%%g"
+if "%~x1"==".ini" (
+	set "_catver=%~1"
+	if "%~x2"==".dat" set "_dat=%~2"
+	if "%~x2"==".xml" set "_dat=%~2"
+)
 
-if not "%_dat%"=="" (
-	call :get_dat_info "%_dat%"
-	
+if "%~x2"==".ini" (
+	set "_catver=%~2"
+	if "%~x1"==".dat" set "_dat=%~1"
+	if "%~x1"==".xml" set "_dat=%~1"
+)
+
+if "%_dat%"=="" for %%g in (*.dat *.xml) do set "_dat=%%g"
+
+if not "%_dat%"=="" call :get_dat_info2
+
+for /f "delims=" %%g in ('_bin\xidel -s --input-format=html --output-format=cmd "%_catver%" 
+		-e "_cat:=matches( $raw, '^\[Category\]', 'mi')"
+		-e "_ver:=matches( $raw, '^\[VerAdded\]', 'mi')"
+		-e "_lang:=matches( $raw, '^\[Chinese\]', 'mi')"
+		-e "_nplay:=matches( $raw, '^\[NPlayers\]', 'mi')"
+		-e "_best:=matches( $raw, '^\[0 to 10 \(Worst\)\]', 'mi')"') do %%g
+
+if %_cat%==true (
+	set "_menu_title=catver.ini"
+	if %_ver%==true (
+		if exist _temp\dummy.tmp del _temp\dummy.tmp
+		_bin\xidel -s --input-format=html "%_catver%" -e "extract( $raw, '^\[VerAdded\](.+)', 1, 'mis')" >_temp\version.tmp
+		_bin\xidel -s --input-format=html "%_catver%" -e "extract( $raw, '^\[Category\](.+?)^\[VerAdded\]', 1, 'mis')" >_temp\catver.tmp
+	)else (
+		_bin\xidel -s --input-format=html "%_catver%" -e "extract( $raw, '^\[Category\](.+)', 1, 'mis')" >_temp\catver.tmp
+	)
+
+)
+if %_lang%==true call :convert_ini "%_catver%"&set "_menu_title=language.ini"
+if %_best%==true call :convert_ini "%_catver%"&set "_menu_title=bestgames.ini"
+if %_nplay%==true (
+	set "_menu_title=nplayers.ini"
+	_bin\xidel -s --input-format=html "%_catver%" -e "extract( $raw, '^\[NPlayers\](.+)', 1, 'mis')" >_temp\catver.tmp
+
 )
 
 :catver_menu2
 cls
-echo. ========= Catver.ini Options ===========
+echo. ============== %_menu_title% ==============
 echo. %_dat%
 echo. ========================================
 echo.
-echo. 1. Generate list from catver.ini
-echo. 2. Make Batch script from catver.ini folders
-echo. 3. Cleanup and exit
+echo. 1. Generate list from .ini
+echo. 2. Make Batch script from .ini with folders
+echo. 3. Make Batch script from .ini edit and preview
+if %_ver%==true echo. 4. switch Catgory/VerAdded
+if not "%_dat%"=="" echo. 5. Make titles listd from .ini
+echo. 6. Cleanup and exit
 echo.
-choice /n /c:123 /m "Enter Option:"
+choice /n /c:12345 /m "Enter Option:"
 if %errorlevel% equ 1 goto :catver_list
-if %errorlevel% equ 2 goto :catver_batch
-if %errorlevel% equ 3 exit
+if %errorlevel% equ 2 (
+	set /a _count=0
+	goto :catver_batch
+)
+if %errorlevel% equ 3 (
+	type nul >_temp\option.tmp
+	type nul > _temp\found.tmp
+	goto :catver_batch_edit
+)
+if %_ver%==true if %errorlevel% equ 4 goto :catver_switch
+if %errorlevel% equ 5 goto :catver_titles
+if %errorlevel% equ 6 exit
+goto :catver_menu2
+
+:catver_titles
+cls&echo. Building list...
+_bin\xidel -s _temp\temp.dat -e "//%_tag%/(@name|description)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1	$2', 'm')" >_temp\temp.2
+
+type nul >_temp\temp.1
+for /f "tokens=1,2 delims=	" %%g in (_temp\temp.2) do (
+	for /f "delims=" %%i in ('_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^%%g=(.+)$', 1, 'm')"') do (
+		(echo %%i	%%g^|%%h) >>_temp\temp.1
+	)
+)
+sort _temp\temp.1 /o "output\catver_titles_list.txt"
+del _temp\temp.1 _temp\temp.2
+
+goto :catver_menu2
+
+:catver_switch
+if "%_menu_title%"=="catver.ini" (
+	REM set _file=VerAdded
+	set "_menu_title=version_added.ini"
+	ren _temp\catver.tmp dummy.tmp
+	ren _temp\version.tmp catver.tmp
+	
+)else (
+	REM set _file=Category
+	set "_menu_title=catver.ini"
+	ren _temp\catver.tmp version.tmp
+	ren _temp\dummy.tmp catver.tmp
+
+)
+
 goto :catver_menu2
 
 :catver_list
 cls&echo Building list...
-_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^\w+=(.+)$', 1, 'm*')" >_temp\catver.txt
+_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^\w+=(.+)$', 1, 'm*')" >_temp\temp.1
 
-call :nodups catver.txt 1
-move /y _temp\catver.txt output
+call :nodups temp.1 1
+move /y _temp\temp.1 "output\%_file%_list.txt"
 
 echo Finish, the list is in the output folder&pause
 goto :catver_menu2
 
 :catver_batch
-
-set /a _count=0
-:catver_batch2
+REM //script good to trash games, since will move clones and leave parent
+REM //adding parents will work if copy is jused
 cls&set "_option="
-echo. ==================================================================
+echo. ====================================================================
 echo. Type full category or part, then press 'Enter' to add another one
 echo.           each entry will make its own folder
 echo. ====================================================================
@@ -590,7 +710,7 @@ echo. ===================================================================
 for %%g in (_temp\*.lst) do echo. %%~ng
 echo. ====================================================================
 echo.
-set /p _option="Enter Category, or Option: " ||goto :catver_batch2
+set /p _option="Enter Category, or Option: " ||goto :catver_batch
 echo.
 if "%_option%"=="1" (
 	if not "%_dat%"=="" call :add_clones_lst
@@ -599,6 +719,7 @@ if "%_option%"=="1" (
 )
 if "%_option%"=="2" (
 	del /q _temp\*.lst
+	set /a _count=0
 	goto :catver_batch
 )
 if "%_option%"=="3" (
@@ -614,7 +735,7 @@ for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '([*\\)(.])', 
 for /f "delims=" %%g in ('_bin\xidel -s _temp\catver.tmp -e "matches( $raw, '^\w+=.*?%_option%.*$', 'mi')"') do (
 	if "%%g"=="false" (
 		echo That category was not found...&timeout 3 >nul
-		goto :catver_batch2
+		goto :catver_batch
 	)
 )
 
@@ -623,7 +744,96 @@ for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '[&*\\/. ]', '
 _bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^(\w+)=.*?%_option%.*$', 1, 'mi*')" >"_temp\%_count%_%_folder%.lst"
 
 echo All games were added&timeout 3 >nul
-goto :catver_batch2
+goto :catver_batch
+
+
+:catver_batch_edit
+REM //script good to trash games, since will move clones and leave parent
+REM //adding parents will work if copy is jused
+cls&set "_option="
+echo. ====================================================================
+echo. Type full category or part, then press 'Enter' to add another one
+echo.           each entry will make its own folder
+echo. ====================================================================
+echo. 1. finish list and build batch
+echo. 2. clear list and restart
+echo. 3. preview list, and remove items
+echo. 4. go back
+echo. ===================================================================
+for /f "delims=" %%g in (_temp\option.tmp) do echo. %%g
+echo. ====================================================================
+echo.
+set /p _option="Enter Category, or Option: " ||goto :catver_batch_edit
+echo.
+if "%_option%"=="1" (
+	_bin\xidel -s _temp\found.tmp -e "extract( $raw, '^(\w+)=.+$', 1, 'm*')" >_temp\catver.lst
+	call :nodups catver.lst 0
+	if not "%_dat%"=="" call :add_clones_lst
+	call :make_batch catver_edit
+	goto :catver_menu2
+)
+if "%_option%"=="2" (
+	del /q _temp\*.lst
+	type nul > _temp\found.tmp
+	type nul >_temp\option.tmp
+	goto :catver_batch_edit
+)
+REM // preview items
+if "%_option%"=="3" (
+	copy /y _temp\found.tmp _temp\temp.1
+	goto :catver_preview
+)
+
+if "%_option%"=="4" (
+	del /q _temp\*.lst
+	goto :catver_menu2
+)
+
+REM // automaticaly escape characters
+
+set "_option=%_option:'=''''%"
+for /f "delims=" %%g in ('_bin\xidel -s -e "replace( '%_option%', '([*\\)(.])', '\\$1')"') do set "_option=%%g"
+
+for /f "delims=" %%g in ('_bin\xidel -s _temp\catver.tmp -e "matches( $raw, '^\w+=.*?%_option%.*$', 'mi')"') do (
+	if "%%g"=="false" (
+		echo That category was not found...&timeout 3 >nul
+		goto :catver_batch_edit
+	)
+)
+
+
+(echo "%_option%") >>_temp\option.tmp
+_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^(\w+)=.*?%_option%.*$', 0, 'mi*')" >>_temp\found.tmp
+
+echo All games were added&timeout 3 >nul
+goto :catver_batch_edit
+
+
+:catver_preview
+cls&set "_option="
+echo. ============= current list ==================
+echo.
+type _temp\temp.1
+echo.
+echo. ============= Options =======================
+echo 1. Save list and go back
+echo 2. Dissmis and go back
+echo.
+set /p "_option=Enter category to remove or option: " || goto :catver_preview
+echo.
+
+findstr /i /r /v /c:"=.*%_option%" _temp\temp.1 >_temp\temp.2
+
+del _temp\temp.1 & ren _temp\temp.2 temp.1
+
+if "%_option%"=="1" (
+	del _temp\found.tmp & ren _temp\temp.1 found.tmp
+	goto catver_batch_edit
+)
+if "%_option%"=="2" goto catver_batch_edit
+
+goto catver_preview
+
 
 REM // ================================= end of catver.ini options =========================================
 
@@ -741,25 +951,19 @@ REM // ============================== end of mamediff options ==================
 
 
 :add_clones
-setlocal enabledelayedexpansion
 cls&echo. Looking for orphan clones, this may take a while...
-
 copy /y _temp\%1 _temp\temp.1 >nul
 
 for /f "delims=" %%h in (_temp\%1) do (
 	for /f "delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
-		findstr /xc:"%%i" _temp\%1 >nul
-		if !errorlevel! equ 1 (echo %%i) >>_temp\temp.1
+		findstr /xc:"%%i" _temp\temp.1 >nul || (echo %%i) >>_temp\temp.1
 	)
-)
-	
+)	
 move /y _temp\temp.1 _temp\%1 >nul
-
-setlocal disabledelayedexpansion
 exit /b
 
+
 :add_clones_lst
-setlocal enabledelayedexpansion
 REM //clones cant run without parents, so add all the clones when moving parents... 
 REM //no need to check if parent?? because of 'for' behaviour
 cls&echo. Looking for orphan clones, this may take a while...
@@ -768,15 +972,18 @@ for %%g in (_temp\*.lst) do (
 
 	for /f "delims=" %%h in (%%g) do (
 		for /f "delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
-			findstr /xc:"%%i" %%g >nul
-			if !errorlevel! equ 1 (echo %%i) >>_temp\temp.1
+			findstr /xc:"%%i" _temp\temp.1 >nul || (echo %%i) >>_temp\temp.1
 		)
 	)
 		
 	move /y _temp\temp.1 %%g >nul
 )
 
-setlocal disabledelayedexpansion
+
+REM for /f "tokens=2 delims==" %%i in ('findstr /rc:"^%%h=.*" _temp\cloneof.1') do (
+	REM findstr /xc:"%%i" _temp\temp.1 >nul || (echo %%i) >>_temp\temp.1
+REM )
+
 exit /b
 
 
@@ -793,6 +1000,7 @@ del _temp\%1 & ren _temp\nodups.1 %1
 exit /b
 
 :nodups
+cls&echo. looking for duplicates...
 setlocal enabledelayedexpansion
 type nul >_temp\nodups.1
 for /f "usebackq delims=" %%g in ("_temp\%~1") do (
@@ -822,7 +1030,7 @@ exit /b
 :make_batch_img
 REM //may have duplicate entries, dosen't matter becuase of list position
 REM // add copy, move option
-
+REM // using replace will be faster
 cls&echo. Building batch script...
 if not exist "_temp\*.lst" exit /b
 (
@@ -873,10 +1081,10 @@ if not exist "_temp\*.lst" exit /b
 				echo move /y "%%h.zip" "%%~ng" ^>nul
 		)
 	)
-)>"_temp\%_file%_%1.bat"
+)>"_temp\make_batch.bat"
 
 del /q _temp\*.lst
-move /y "_temp\%_file%_%1.bat" output\
+move /y _temp\make_batch.bat "output\%_file%_%1.bat"
 
 cls&echo. All done!! batch script is in the OUTPUT folder&timeout 5 >nul
 exit /b
@@ -894,7 +1102,8 @@ for /f "delims=" %%g in ('_bin\xidel -s --output-format=cmd _temp\temp.dat
 		-e "_drv_old:=matches( $raw, '<driver status=\""protection\""')"
 		-e "_src:=matches( $raw, 'sourcefile=\""[\w./-]+\""')"
 		-e "_dev:=matches( $raw, 'isdevice=\""yes\""')"
-		-e "_isbios:=matches( $raw, 'isbios=\""yes\""')"') do %%g
+		-e "_isbios:=matches( $raw, 'isbios=\""yes\""')"
+		-e "_input_old:=matches( $raw, '<input players=\""\d\"" control=\""\w+\""')"') do %%g
 
 set "_sourcefile="
 if %_tag%==true (set "_tag=machine")else (set "_tag=game")
@@ -909,6 +1118,41 @@ del _temp\temp.1
 REM //bios plain list
 _bin\xidel -s _temp\temp.dat -e "//%_tag%[%_isbios%]/@name" >_temp\bios.1
 
+REM if %_dev%==false exit /b
+REM cls&echo. Devices were detected in the datafile...
+REM choice /m "Remove devices?"
+REM if %errorlevel% equ 2 exit
+REM _bin\xidel -s _temp\temp.dat -e "replace( $raw, '^\t\t<device_ref name=\""\w+\""/>\r\n', '', 'm')" >_temp\temp.1
+REM _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^\t<machine name=\""\w+\"" sourcefile=\""[\w./-]+\"" isdevice=\""yes\"".+?</machine>\r\n', '', 'ms')" >_temp\temp.dat
+
+
+exit /b
+
+:get_dat_info2
+_bin\xidel -s "%_dat%" -e "replace( $raw, '^<!DOCTYPE mame \[.+?\]>$', '', 'ms')" >_temp\temp.dat
+for /f "delims=" %%g in ('_bin\xidel -s --output-format=cmd _temp\temp.dat -e "_tag:=matches( $raw, '<machine name=\""\w+\""')"') do %%g
+if %_tag%==true (set "_tag=machine")else (set "_tag=game")
+_bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/(@name|@cloneof)" >_temp\temp.1
+_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)$', '$1=$2', 'm')" >_temp\cloneof.1
+del _temp\temp.1
 exit /b
 
 
+:convert_ini
+cls&echo. converting .ini file...
+setlocal enabledelayedexpansion
+set "_country="
+type nul >_temp\catver.tmp
+for /f "usebackq delims=" %%g in ("%~1") do (
+	set "_str=%%g"
+	if not "%%g"=="!_str:[=!" (
+		set "_country=!_str:[=!"
+		set "_country=!_country:]=!"
+		
+	)else (
+		(echo %%g=!_country!) >>_temp\catver.tmp
+	
+	)
+)
+setlocal disabledelayedexpansion
+exit /b
