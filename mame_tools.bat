@@ -146,7 +146,7 @@ goto :list_menu
 cls&echo. Building game list...
 _bin\xidel -s _temp\temp.dat -e "//%_tag%/input/@control" >_temp\index.1
 call :nodups index.1 1
-type nul >_temp\temp.2
+type nul>_temp\temp.2
 for /f %%g in (_temp\index.1) do (
 	_bin\xidel -s _temp\temp.dat -e "//%_tag%/input[@control='%%g']/../(@name|description)" >_temp\temp.1
 	_bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '%%g	$1|$2', 'm')" >>_temp\temp.2
@@ -211,7 +211,7 @@ _bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/driver[%_option%@status='goo
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1[p]	$1	$2', 'm')" >_temp\parents.lst
 _bin\xidel -s _temp\temp.2 -e "replace( $raw, '^(\w+)\r\n(\w+)\r\n(.+)$', '$2	$1	$3', 'm')" >_temp\clones.lst
 
-type nul >_temp\xclones.lst
+type nul>_temp\xclones.lst
 for /f "delims=[" %%g in (_temp\parents.lst) do (
 	for /f "delims=" %%h in ('_bin\xidel -s _temp\clones.lst -e "matches( $raw, '^%%g\t', 'm')"') do (
 		if %%h==true (
@@ -555,7 +555,7 @@ echo.
 set /p _option="Enter Sourcefile: " ||goto :batch_src
 echo.
 if "%_option%"=="finish" (
-	call :add_clones_lst
+	call :add_clones_lst 0
 	call :make_batch sourcefiles
 	goto :batch_menu
 )
@@ -578,7 +578,7 @@ REM // ==================================== end of batch menu ==================
 
 :catver_menu
 cls&echo. Getting .ini info...
-REM if not exist "_bin\datutil.exe" cls&echo. This script needs "_bin\datuil.exe"&pause&exit
+if not exist "_bin\datutil.exe" cls&echo. This script needs "_bin\datuil.exe"&pause&exit
 set "_dat="&set "_catver="
 
 if "%~x1"==".ini" (
@@ -595,7 +595,10 @@ if "%~x2"==".ini" (
 
 if "%_dat%"=="" for %%g in (*.dat *.xml) do set "_dat=%%g"
 
-if not "%_dat%"=="" call :get_dat_info2
+if not "%_dat%"=="" (
+	_bin\datutil -o _temp\temp.dat -f generic "%_dat%" >nul
+	call :get_dat_info2 "_temp\temp.dat"
+)
 
 for /f "delims=" %%g in ('_bin\xidel -s --input-format=html --output-format=cmd "%_catver%" 
 		-e "_cat:=matches( $raw, '^\[Category\]', 'mi')"
@@ -643,8 +646,8 @@ if %errorlevel% equ 2 (
 	goto :catver_batch
 )
 if %errorlevel% equ 3 (
-	type nul >_temp\option.tmp
-	type nul > _temp\found.tmp
+	type nul>_temp\option.tmp
+	type nul> _temp\found.tmp
 	goto :catver_batch_edit
 )
 if %_ver%==true if %errorlevel% equ 4 goto :catver_switch
@@ -657,7 +660,7 @@ cls&echo. Building list...
 _bin\xidel -s _temp\temp.dat -e "//%_tag%/(@name|description)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(.+)$', '$1	$2', 'm')" >_temp\temp.2
 
-type nul >_temp\temp.1
+type nul>_temp\temp.1
 for /f "tokens=1,2 delims=	" %%g in (_temp\temp.2) do (
 	for /f "delims=" %%i in ('_bin\xidel -s _temp\catver.tmp -e "extract( $raw, '^%%g=(.+)$', 1, 'm')"') do (
 		(echo %%i	%%g^|%%h) >>_temp\temp.1
@@ -713,7 +716,7 @@ echo.
 set /p _option="Enter Category, or Option: " ||goto :catver_batch
 echo.
 if "%_option%"=="1" (
-	if not "%_dat%"=="" call :add_clones_lst
+	if not "%_dat%"=="" call :add_clones_lst 0
 	call :make_batch catver_folders
 	goto :catver_menu2
 )
@@ -768,14 +771,14 @@ echo.
 if "%_option%"=="1" (
 	_bin\xidel -s _temp\found.tmp -e "extract( $raw, '^(\w+)=.+$', 1, 'm*')" >_temp\catver.lst
 	call :nodups catver.lst 0
-	if not "%_dat%"=="" call :add_clones_lst
+	if not "%_dat%"=="" call :add_clones_lst 0
 	call :make_batch catver_edit
 	goto :catver_menu2
 )
 if "%_option%"=="2" (
 	del /q _temp\*.lst
-	type nul > _temp\found.tmp
-	type nul >_temp\option.tmp
+	type nul> _temp\found.tmp
+	type nul>_temp\option.tmp
 	goto :catver_batch_edit
 )
 REM // preview items
@@ -839,8 +842,12 @@ REM // ================================= end of catver.ini options =============
 
 :mamediff_menu
 
-set "_dat1=%~1"
-set "_dat2=%~2"
+_bin\datutil -o _temp\dat1.dat -f generic "%~1" >nul
+_bin\datutil -o _temp\dat2.dat -f generic "%~2" >nul	
+
+
+set "_dat1=_temp\dat1.dat"
+set "_dat2=_temp\dat2.dat"
 set "_file1=%~n1"
 set "_file2=%~n2"
 set "_dummy="
@@ -856,14 +863,30 @@ echo. ================================================
 echo. 1. cross reference both datafiles
 echo. 2. switch around datafiles
 echo. 3. batch script to rename .png images
-echo. 3. cleanup and exit
+echo. 4. batch script to remove shared games
+echo. 5. generate mamediff report
+echo. 6. cleanup and exit
 echo.
-choice /n /c:1234 /m "Enter Option:"
+choice /n /c:123456 /m "Enter Option:"
 echo.
 if %errorlevel% equ 1 goto :diff_cross
 if %errorlevel% equ 2 goto :diff_switch
 if %errorlevel% equ 3 goto :diff_img
-if %errorlevel% equ 4 exit
+if %errorlevel% equ 4 goto :diff_batch
+if %errorlevel% equ 5 goto :diff_report
+if %errorlevel% equ 6 exit
+
+goto :diff_menu2
+
+
+:diff_report
+
+_bin\mamediff -s %_dat1% %_dat2% >nul
+move /y mamediff.log output\
+del mamediff.out
+
+
+
 
 goto :diff_menu2
 
@@ -871,9 +894,13 @@ goto :diff_menu2
 REM //mamediff.out has repeated entries
 set "_option="
 choice /m "Use only parents?:"
-if %errorlevel% equ 1 set "_option=-r "
-_bin\datutil -o _temp\temp1.dat -f generic "%_dat1%" >nul
-_bin\datutil %_option%-o _temp\temp2.dat -f generic "%_dat2%" >nul	
+if %errorlevel% equ 1 (
+	_bin\datutil -r -o _temp\temp2.dat -f generic "%_dat2%" >nul
+)else (
+	copy /y "%_dat2%" _temp\temp2.dat
+)
+
+coy /y "%_dat1%" _temp\temp1.dat
 
 _bin\mamediff -s _temp\temp1.dat _temp\temp2.dat >nul
 del mamediff.log&move mamediff.out _temp\
@@ -881,6 +908,8 @@ del mamediff.log&move mamediff.out _temp\
 _bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^\w+\t\w+$', 0, 'm*')" >_temp\images.lst
 
 call :make_batch_img images.lst
+
+del _temp\temp1.dat _temp\temp2.dat
 
 goto :diff_menu2
 
@@ -895,17 +924,46 @@ set "_dummy=%_file2%"
 set "_file2=%_file1%"
 set "_file1=%_dummy%"
 
+set "_file=%_file1%"
+
 goto :diff_menu2
+
+
+:diff_batch
+
+REM _bin\datutil -r -o _temp\temp1.dat -f generic "%_dat1%" >nul
+
+
+REM //make sure there are clones to extract
+call :get_dat_info2 "%_dat1%"
+
+
+_bin\mamediff -s "%_dat1%" "%_dat2%" >nul
+del mamediff.log&move mamediff.out _temp\
+
+_bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^(\w+)\t\w+$', 1, 'm*')" >_temp\shared.lst
+
+REM //add parent and clones
+call :add_clones_lst 1
+
+REM call :nodups shared.lst 0
+call :make_batch shared_games
+
+del _temp\temp1.dat
+goto :diff_menu2
+
 
 :diff_cross
 
 REM //compare only the parenst from the first datafiles vs all the games of the second datafile
 set "_option="
 choice /m "Use only parents?:"
-if %errorlevel% equ 1 set "_option=-r "
-
-_bin\datutil %_option%-o _temp\temp1.dat -f generic "%_dat1%" >nul
-_bin\datutil -o _temp\temp2.dat -f generic "%_dat2%" >nul
+if %errorlevel% equ 1 (
+	_bin\datutil -r -o _temp\temp1.dat -f generic "%_dat1%" >nul
+)else (
+	copy /y "%_dat1%" _temp\temp1.dat
+)
+copy /y "%_dat2%" _temp\temp2.dat
 
 _bin\mamediff -s _temp\temp1.dat _temp\temp2.dat >nul
 del mamediff.log&move mamediff.out _temp\
@@ -921,7 +979,7 @@ _bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^\w+\t\w+$', 0, 'm*')" >_te
 _bin\xidel -s _temp\mamediff.out -e "extract( $raw, '^(\w+)\t$', 1, 'm*')" >_temp\index.2
 
 REM //both
-type nul >_temp\temp.1
+type nul>_temp\temp.1
 for /f "tokens=1,2 delims=	" %%g in (_temp\index.1) do (
 	echo %%g %%h
 	_bin\xidel -s _temp\titles1.lst -e "extract( $raw, '^%%g\|.+$', 0, 'm')" >>_temp\temp.1
@@ -932,7 +990,7 @@ for /f "tokens=1,2 delims=	" %%g in (_temp\index.1) do (
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(.+?)\r\n(.+)$', '$1 -----> $2', 'm')" >>_temp\cross.txt
 
 REM //only in the first
-type nul >_temp\temp.1
+type nul>_temp\temp.1
 for /f "delims=" %%g in (_temp\index.2) do (
 	echo %%g
 	_bin\xidel -s _temp\titles1.lst -e "extract( $raw, '^%%g\|.+$', 0, 'm')" >>_temp\temp.1
@@ -942,9 +1000,10 @@ for /f "delims=" %%g in (_temp\index.2) do (
 type _temp\temp.1 >>_temp\cross2.txt
 
 del /q _temp\*.lst _temp\temp.1 _temp\index.1 _temp\index.2
+del _temp\temp1.dat _temp\temp2.dat
 
-move /y _temp\cross.txt output
-move /y _temp\cross2.txt output
+move /y _temp\cross.txt "output\%_file%_shared.txt"
+move /y _temp\cross2.txt "output\%_file%_unique_games.txt"
 goto :diff_menu2
 
 REM // ============================== end of mamediff options =================================================
@@ -971,8 +1030,13 @@ for %%g in (_temp\*.lst) do (
 	copy /y %%g _temp\temp.1 >nul
 
 	for /f "delims=" %%h in (%%g) do (
-		for /f "delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
+		for /f "tokens=1 delims==" %%i in ('findstr /rc:"^.*=%%h$" _temp\cloneof.1') do (
 			findstr /xc:"%%i" _temp\temp.1 >nul || (echo %%i) >>_temp\temp.1
+		)
+		if "%1"=="1" (
+			for /f "tokens=2 delims==" %%i in ('findstr /rc:"^%%h=.*" _temp\cloneof.1') do (
+				findstr /xc:"%%i" _temp\temp.1 >nul || (echo %%i) >>_temp\temp.1
+			)
 		)
 	)
 		
@@ -990,7 +1054,7 @@ exit /b
 :nodups_tab
 REM // filter by fist string, TAB as delimiter
 
-type nul >_temp\nodups.1
+type nul>_temp\nodups.1
 for /f "tokens=1 delims=	" %%g in (_temp\%1) do (
 	for /f "delims=" %%h in ('_bin\xidel -s _temp\nodups.1 -e "matches( $raw, '^%%g\t.+$', 'm')"') do (
 		if "%%h"=="false" _bin\xidel -s _temp\%1 -e "extract( $raw, '^%%g\t.+$', 0, 'm')" >>_temp\nodups.1
@@ -1002,7 +1066,7 @@ exit /b
 :nodups
 cls&echo. looking for duplicates...
 setlocal enabledelayedexpansion
-type nul >_temp\nodups.1
+type nul>_temp\nodups.1
 for /f "usebackq delims=" %%g in ("_temp\%~1") do (
 	set /a _con=0
 	for /f "delims=" %%h in (_temp\nodups.1) do if "%%g"=="%%h" set /a _con+=1
@@ -1012,7 +1076,7 @@ for /f "usebackq delims=" %%g in ("_temp\%~1") do (
 
 REM //count and adds occurances to output
 if %2 equ 1 (
-	type nul >_temp\nodups.2
+	type nul>_temp\nodups.2
 	for /f "delims=" %%g in (_temp\nodups.1) do (
 		set /a _con=0
 		for /f "usebackq delims=" %%h in ("_temp\%~1") do if "%%g"=="%%h" set /a _con+=1
@@ -1129,10 +1193,8 @@ REM _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^\t<machine name=\""\w+\"" so
 exit /b
 
 :get_dat_info2
-_bin\xidel -s "%_dat%" -e "replace( $raw, '^<!DOCTYPE mame \[.+?\]>$', '', 'ms')" >_temp\temp.dat
-for /f "delims=" %%g in ('_bin\xidel -s --output-format=cmd _temp\temp.dat -e "_tag:=matches( $raw, '<machine name=\""\w+\""')"') do %%g
-if %_tag%==true (set "_tag=machine")else (set "_tag=game")
-_bin\xidel -s _temp\temp.dat -e "//%_tag%[@cloneof]/(@name|@cloneof)" >_temp\temp.1
+
+_bin\xidel -s "%~1" -e "//game[@cloneof]/(@name|@cloneof)" >_temp\temp.1
 _bin\xidel -s _temp\temp.1 -e "replace( $raw, '^(\w+)\r\n(\w+)$', '$1=$2', 'm')" >_temp\cloneof.1
 del _temp\temp.1
 exit /b
@@ -1142,7 +1204,7 @@ exit /b
 cls&echo. converting .ini file...
 setlocal enabledelayedexpansion
 set "_country="
-type nul >_temp\catver.tmp
+type nul>_temp\catver.tmp
 for /f "usebackq delims=" %%g in ("%~1") do (
 	set "_str=%%g"
 	if not "%%g"=="!_str:[=!" (
