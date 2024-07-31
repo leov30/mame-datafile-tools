@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 set "_file=%~n1"
 
-if exist xidel.exe (set _xidel=xidel)else (set _xidel=c:\_bin\xidel)
+if exist _bin\xidel.exe (set _xidel=_bin\xidel)else (set _xidel=c:\_bin\xidel)
 
 
 if "%~1"=="" echo Only drag and drop datafiles&pause&exit
